@@ -1,9 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { SightWords, UpdateSightWords } from "@shared/schema";
+import { UpdateSightWords } from "@shared/schema";
 
 interface SightWordContextType {
   words: string[];
@@ -29,27 +26,56 @@ interface SightWordProviderProps {
   children: ReactNode;
 }
 
+// Default words
+const DEFAULT_WORDS = [
+  'I', 'the', 'am', 'like', 'to', 'a', 'have', 'he', 'is', 'we',
+  'my', 'make', 'for', 'me', 'with', 'are', 'that', 'of', 'they', 'you',
+  'do', 'one', 'two', 'three', 'four', 'five', 'here', 'go', 'from', 'yellow',
+  'what', 'when', 'why', 'who', 'come', 'play', 'any', 'down', 'her', 'how',
+  'away', 'give', 'little', 'funny', 'were', 'some', 'find', 'again', 'over', 'all',
+  'now', 'pretty', 'brown', 'black', 'white', 'good', 'open', 'could', 'please', 'want',
+  'every', 'be', 'saw', 'our', 'eat', 'soon', 'walk', 'into', 'there'
+];
+
+const STORAGE_KEY = 'sightwords-settings';
+
+// Load settings from localStorage
+const loadSettings = () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Failed to load settings from localStorage:', error);
+  }
+  return {
+    words: DEFAULT_WORDS,
+    randomOrder: false,
+    autoAdvance: false,
+    speechEnabled: true,
+    speechRate: "0.8",
+    speechPitch: "1.0",
+    speechVoice: undefined,
+  };
+};
+
 export const SightWordProvider = ({ children }: SightWordProviderProps) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
-  // Fetch sight words data
-  const { data, isLoading } = useQuery({
-    queryKey: ["/api/sight-words"],
-    retry: 1,
-  });
+  // Load settings from localStorage
+  const [settings, setSettings] = useState(loadSettings);
 
-  const sightWordsData = data as SightWords | undefined;
-  
-  // Default words if data is not loaded yet
-  const words = sightWordsData?.words || [];
-  const randomOrder = sightWordsData?.randomOrder || false;
-  const autoAdvance = sightWordsData?.autoAdvance || false;
-  const speechEnabled = sightWordsData?.speechEnabled ?? true;
-  const speechRate = sightWordsData?.speechRate || "0.8";
-  const speechPitch = sightWordsData?.speechPitch || "1.0";
-  const speechVoice = sightWordsData?.speechVoice || undefined;
+  const words = settings.words;
+  const randomOrder = settings.randomOrder;
+  const autoAdvance = settings.autoAdvance;
+  const speechEnabled = settings.speechEnabled;
+  const speechRate = settings.speechRate;
+  const speechPitch = settings.speechPitch;
+  const speechVoice = settings.speechVoice;
 
   // Set up autoAdvance timer
   useEffect(() => {
@@ -66,27 +92,28 @@ export const SightWordProvider = ({ children }: SightWordProviderProps) => {
     };
   }, [currentIndex, autoAdvance, words]);
 
-  // Update settings mutation
-  const { mutate, isPending: isSaving } = useMutation({
-    mutationFn: async (data: UpdateSightWords) => {
-      return apiRequest("POST", "/api/sight-words", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sight-words"] });
+  // Save settings to localStorage
+  const saveSettingsToStorage = (data: UpdateSightWords) => {
+    setIsSaving(true);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      setSettings(data);
       toast({
         title: "Settings saved",
         description: "Your sight words have been updated successfully.",
       });
       setIsSettingsOpen(false);
-    },
-    onError: (error) => {
+    } catch (error) {
+      console.error('Failed to save settings:', error);
       toast({
         title: "Failed to save settings",
         description: "Please try again later.",
         variant: "destructive",
       });
-    },
-  });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const showNextWord = () => {
     if (words.length === 0) return;
@@ -111,9 +138,9 @@ export const SightWordProvider = ({ children }: SightWordProviderProps) => {
 
   const openSettings = () => setIsSettingsOpen(true);
   const closeSettings = () => setIsSettingsOpen(false);
-  
+
   const saveSettings = (data: UpdateSightWords) => {
-    mutate(data);
+    saveSettingsToStorage(data);
     // Reset to the first word when settings change
     setCurrentIndex(0);
   };
@@ -129,7 +156,7 @@ export const SightWordProvider = ({ children }: SightWordProviderProps) => {
         speechRate,
         speechPitch,
         speechVoice,
-        isLoading,
+        isLoading: false,
         isSettingsOpen,
         showNextWord,
         openSettings,
